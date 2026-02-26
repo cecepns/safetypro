@@ -36,6 +36,9 @@ function InventarisPage({ isAdmin = false }) {
   const [deletingId, setDeletingId] = useState(null)
   const [verifikasiModal, setVerifikasiModal] = useState(null)
   const [verifikasiSaving, setVerifikasiSaving] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize] = useState(20)
+  const [total, setTotal] = useState(0)
   const [filters, setFilters] = useState({
     departmentId: '',
     jenisApd: '',
@@ -63,16 +66,29 @@ function InventarisPage({ isAdmin = false }) {
     }
   }, [])
 
-  async function loadInventaris() {
+  async function loadInventaris(nextPage, nextFilters) {
+    const currentPage = nextPage || page
+    const effectiveFilters = nextFilters || filters
+
     setLoading(true)
     setError('')
     try {
-      const params = {}
-      if (filters.departmentId) params.departmentId = filters.departmentId
-      if (filters.jenisApd) params.namaApd = filters.jenisApd
+      const params = {
+        page: currentPage,
+        pageSize,
+      }
+      if (effectiveFilters.departmentId) {
+        params.departmentId = effectiveFilters.departmentId
+      }
+      if (effectiveFilters.jenisApd) {
+        params.namaApd = effectiveFilters.jenisApd
+      }
 
       const res = await api.get('/inventaris', { params })
-      setItems(res.data || [])
+      const payload = res.data || {}
+      setItems(payload.data || [])
+      setTotal(payload.total || 0)
+      setPage(payload.page || currentPage)
     } catch (err) {
       console.error('Failed to load inventaris', err)
       setError('Gagal memuat inventaris APD')
@@ -82,13 +98,18 @@ function InventarisPage({ isAdmin = false }) {
   }
 
   useEffect(() => {
-    loadInventaris()
+    loadInventaris(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function handleFilterChange(e) {
     const { name, value } = e.target
     setFilters((prev) => ({ ...prev, [name]: value }))
+
+    if (name === 'departmentId' || name === 'jenisApd') {
+      const nextFilters = { ...filters, [name]: value }
+      loadInventaris(1, nextFilters)
+    }
   }
 
   async function handleResetFilters() {
@@ -97,17 +118,11 @@ function InventarisPage({ isAdmin = false }) {
       jenisApd: '',
       search: '',
     })
-    setLoading(true)
-    setError('')
-    try {
-      const res = await api.get('/inventaris')
-      setItems(res.data || [])
-    } catch (err) {
-      console.error('Failed to reset inventaris', err)
-      setError('Gagal memuat ulang inventaris APD')
-    } finally {
-      setLoading(false)
-    }
+    loadInventaris(1, {
+      departmentId: '',
+      jenisApd: '',
+      search: '',
+    })
   }
 
   const filteredItems = useMemo(() => {
@@ -128,23 +143,15 @@ function InventarisPage({ isAdmin = false }) {
       })
     }
 
-    // Filter tambahan berdasarkan dropdown Departemen & Jenis APD
-    if (filters.departmentId) {
-      const deptId = Number(filters.departmentId)
-      list = list.filter(
-        (item) => Number(item.department_id) === deptId,
-      )
-    }
-
-    if (filters.jenisApd) {
-      const jenis = filters.jenisApd.toLowerCase()
-      list = list.filter(
-        (item) => item.nama_apd?.toLowerCase() === jenis,
-      )
-    }
-
     return list
-  }, [filters.search, filters.departmentId, filters.jenisApd, items])
+  }, [filters.search, items])
+
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 1
+
+  function handleChangePage(newPage) {
+    if (newPage < 1 || newPage > totalPages || newPage === page) return
+    loadInventaris(newPage)
+  }
 
   async function handleDeleteItem(id) {
     if (
@@ -311,8 +318,10 @@ function InventarisPage({ isAdmin = false }) {
         <div className="border-b border-slate-200 px-4 py-2.5 flex items-center justify-between text-xs text-slate-600">
           <div>
             Menampilkan{' '}
-            <span className="font-semibold">{filteredItems.length}</span> asset
-            APD
+            <span className="font-semibold">{filteredItems.length}</span>{' '}
+            dari{' '}
+            <span className="font-semibold">{total}</span> asset APD
+            (halaman {page} dari {totalPages})
           </div>
           {loading && <div className="italic">Memuat data...</div>}
         </div>
@@ -436,6 +445,31 @@ function InventarisPage({ isAdmin = false }) {
           </table>
         </div>
       </section>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-end gap-2 text-xs text-slate-600">
+          <button
+            type="button"
+            onClick={() => handleChangePage(page - 1)}
+            disabled={page <= 1 || loading}
+            className="px-2 py-1 rounded border border-slate-300 bg-white disabled:opacity-60"
+          >
+            Sebelumnya
+          </button>
+          <span>
+            Halaman <span className="font-semibold">{page}</span> dari{' '}
+            <span className="font-semibold">{totalPages}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => handleChangePage(page + 1)}
+            disabled={page >= totalPages || loading}
+            className="px-2 py-1 rounded border border-slate-300 bg-white disabled:opacity-60"
+          >
+            Berikutnya
+          </button>
+        </div>
+      )}
 
       {verifikasiModal && (
         <div

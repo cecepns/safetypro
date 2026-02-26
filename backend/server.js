@@ -393,9 +393,13 @@ app.post('/api/batch-registration', auth, requireAdmin, async (req, res) => {
   }
 })
 
-// Inventaris APD
+// Inventaris APD (filter & paginasi via API)
 app.get('/api/inventaris', auth, async (req, res) => {
   const { departmentId, namaApd } = req.query
+  const page = Math.max(Number(req.query.page) || 1, 1)
+  const pageSizeRaw = Number(req.query.pageSize) || 20
+  const pageSize = Math.min(Math.max(pageSizeRaw, 1), 100)
+
   const params = []
   let where = 'WHERE 1=1 '
 
@@ -409,10 +413,25 @@ app.get('/api/inventaris', auth, async (req, res) => {
   }
 
   try {
+    const countRows = await query(
+      `
+      SELECT COUNT(*) AS total
+      FROM apd_assets a
+      JOIN departments d ON d.id = a.department_id
+      ${where}
+    `,
+      params,
+    )
+    const total = countRows[0]?.total || 0
+    const totalPages = total > 0 ? Math.ceil(total / pageSize) : 1
+    const safePage = Math.min(page, totalPages)
+    const offset = (safePage - 1) * pageSize
+
     const rows = await query(
       `
       SELECT
         a.id,
+        a.department_id AS department_id,
         a.nama_apd,
         a.tag_id,
         a.kondisi,
@@ -429,10 +448,18 @@ app.get('/api/inventaris', auth, async (req, res) => {
       JOIN departments d ON d.id = a.department_id
       ${where}
       ORDER BY d.name ASC, a.nama_apd ASC, a.tag_id ASC
+      LIMIT ? OFFSET ?
     `,
-      params,
+      [...params, pageSize, offset],
     )
-    res.json(rows)
+
+    res.json({
+      data: rows,
+      page: safePage,
+      pageSize,
+      total,
+      totalPages,
+    })
   } catch (err) {
     console.error('GET /api/inventaris error', err)
     res.status(500).json({ message: 'Server error' })
@@ -516,6 +543,10 @@ app.delete('/api/inventaris/:id', auth, requireAdmin, async (req, res) => {
 // Log riwayat inspeksi
 app.get('/api/logs', auth, async (req, res) => {
   const { departmentId } = req.query
+  const page = Math.max(Number(req.query.page) || 1, 1)
+  const pageSizeRaw = Number(req.query.pageSize) || 20
+  const pageSize = Math.min(Math.max(pageSizeRaw, 1), 100)
+
   const params = []
   let where = 'WHERE 1=1 '
 
@@ -525,6 +556,20 @@ app.get('/api/logs', auth, async (req, res) => {
   }
 
   try {
+    const countRows = await query(
+      `
+      SELECT COUNT(*) AS total
+      FROM inspection_logs l
+      JOIN departments d ON d.id = l.department_id
+      ${where}
+    `,
+      params,
+    )
+    const total = countRows[0]?.total || 0
+    const totalPages = total > 0 ? Math.ceil(total / pageSize) : 1
+    const safePage = Math.min(page, totalPages)
+    const offset = (safePage - 1) * pageSize
+
     const rows = await query(
       `
       SELECT
@@ -544,10 +589,18 @@ app.get('/api/logs', auth, async (req, res) => {
       JOIN departments d ON d.id = l.department_id
       ${where}
       ORDER BY l.inspected_at DESC
+      LIMIT ? OFFSET ?
     `,
-      params,
+      [...params, pageSize, offset],
     )
-    res.json(rows)
+
+    res.json({
+      data: rows,
+      page: safePage,
+      pageSize,
+      total,
+      totalPages,
+    })
   } catch (err) {
     console.error('GET /api/logs error', err)
     res.status(500).json({ message: 'Server error' })

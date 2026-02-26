@@ -46,6 +46,9 @@ function LogRiwayatPage({ isAdmin = false }) {
   const [verifikasiModal, setVerifikasiModal] = useState(null)
   const [verifikasiSaving, setVerifikasiSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
+  const [page, setPage] = useState(1)
+  const [pageSize] = useState(20)
+  const [total, setTotal] = useState(0)
   const [filters, setFilters] = useState({
     departmentId: '',
     search: '',
@@ -68,14 +71,24 @@ function LogRiwayatPage({ isAdmin = false }) {
     }
   }, [])
 
-  async function loadLogs() {
+  async function loadLogs(nextPage, nextFilters) {
+    const currentPage = nextPage || page
+    const effectiveFilters = nextFilters || filters
     setLoading(true)
     setError('')
     try {
-      const params = {}
-      if (filters.departmentId) params.departmentId = filters.departmentId
+      const params = {
+        page: currentPage,
+        pageSize,
+      }
+      if (effectiveFilters.departmentId) {
+        params.departmentId = effectiveFilters.departmentId
+      }
       const res = await api.get('/logs', { params })
-      setLogs(res.data || [])
+      const payload = res.data || {}
+      setLogs(payload.data || [])
+      setTotal(payload.total || 0)
+      setPage(payload.page || currentPage)
     } catch (err) {
       console.error('Failed to load logs', err)
       setError('Gagal memuat log riwayat inspeksi')
@@ -85,24 +98,22 @@ function LogRiwayatPage({ isAdmin = false }) {
   }
 
   useEffect(() => {
-    loadLogs()
+    loadLogs(1)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function handleFilterChange(e) {
     const { name, value } = e.target
     setFilters((prev) => ({ ...prev, [name]: value }))
+
+    if (name === 'departmentId') {
+      const nextFilters = { ...filters, [name]: value }
+      loadLogs(1, nextFilters)
+    }
   }
 
   const filteredLogs = useMemo(() => {
     let list = logs
-
-    if (filters.departmentId) {
-      const deptId = Number(filters.departmentId)
-      list = list.filter(
-        (log) => Number(log.department_id) === deptId,
-      )
-    }
 
     const verifikasiFilter = filters.verifikasiK3L
     if (verifikasiFilter === 'sudah') {
@@ -130,7 +141,14 @@ function LogRiwayatPage({ isAdmin = false }) {
         log.verifikasi_k3l?.toLowerCase().includes(term)
       )
     })
-  }, [filters.search, filters.verifikasiK3L, filters.departmentId, logs])
+  }, [filters.search, filters.verifikasiK3L, logs])
+
+  const totalPages = total > 0 ? Math.ceil(total / pageSize) : 1
+
+  function handleChangePage(newPage) {
+    if (newPage < 1 || newPage > totalPages || newPage === page) return
+    loadLogs(newPage)
+  }
 
   function openVerifikasiModal(log) {
     setVerifikasiModal({
@@ -436,8 +454,9 @@ function LogRiwayatPage({ isAdmin = false }) {
         <div className="border-b border-slate-200 px-4 py-2.5 flex items-center justify-between text-xs text-slate-600">
           <div>
             Menampilkan{' '}
-            <span className="font-semibold">{filteredLogs.length}</span> log
-            inspeksi
+            <span className="font-semibold">{filteredLogs.length}</span> dari{' '}
+            <span className="font-semibold">{total}</span> log inspeksi
+            (halaman {page} dari {totalPages})
           </div>
           {loading && <div className="italic">Memuat data...</div>}
         </div>
@@ -577,6 +596,31 @@ function LogRiwayatPage({ isAdmin = false }) {
           </table>
         </div>
       </section>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-end gap-2 text-xs text-slate-600">
+          <button
+            type="button"
+            onClick={() => handleChangePage(page - 1)}
+            disabled={page <= 1 || loading}
+            className="px-2 py-1 rounded border border-slate-300 bg-white disabled:opacity-60"
+          >
+            Sebelumnya
+          </button>
+          <span>
+            Halaman <span className="font-semibold">{page}</span> dari{' '}
+            <span className="font-semibold">{totalPages}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => handleChangePage(page + 1)}
+            disabled={page >= totalPages || loading}
+            className="px-2 py-1 rounded border border-slate-300 bg-white disabled:opacity-60"
+          >
+            Berikutnya
+          </button>
+        </div>
+      )}
 
       {verifikasiModal && (
         <div
