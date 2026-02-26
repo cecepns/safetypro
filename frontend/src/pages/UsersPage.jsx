@@ -159,7 +159,7 @@ function UsersPage() {
               <button
                 type="submit"
                 disabled={saving}
-                className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                className="w-full bg-red-500 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <UserPlus className="h-4 w-4" />
                 {saving ? 'Menyimpan...' : 'Tambah User'}
