@@ -10,6 +10,7 @@ import {
   X,
   PanelLeftClose,
   PanelLeft,
+  Users as UsersIcon,
 } from 'lucide-react'
 import DashboardPage from './pages/DashboardPage'
 import InputInspeksiPage from './pages/InputInspeksiPage'
@@ -17,13 +18,20 @@ import InventarisPage from './pages/InventarisPage'
 import LogRiwayatPage from './pages/LogRiwayatPage'
 import MasterDataPage from './pages/MasterDataPage'
 import LoginPage from './pages/LoginPage'
+import UsersPage from './pages/UsersPage'
 
 const menuItems = [
   { to: '/', label: 'Dashboard', icon: HardHat },
   { to: '/input-inspeksi', label: 'Input Inspeksi', icon: ClipboardList },
   { to: '/inventaris', label: 'Inventaris APD', icon: Boxes },
   { to: '/log-riwayat', label: 'Log Riwayat', icon: History },
-  { to: '/master-data', label: 'Master Data', icon: Settings },
+  { to: '/master-data', label: 'Master Data', icon: Settings, adminOnly: true },
+  {
+    to: '/users',
+    label: 'Manajemen User',
+    icon: UsersIcon,
+    adminOnly: true,
+  },
 ]
 
 function ProtectedRoute({ isAuthenticated, children }) {
@@ -33,10 +41,25 @@ function ProtectedRoute({ isAuthenticated, children }) {
   return children
 }
 
+function AdminRoute({ isAuthenticated, isAdmin, children }) {
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />
+  }
+  if (!isAdmin) {
+    return <Navigate to="/" replace />
+  }
+  return children
+}
+
 function AppContent({ auth, isAuthenticated, onLogin, onLogout }) {
   const location = useLocation()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+
+  const userRole = auth.user?.role
+    ? String(auth.user.role).toLowerCase()
+    : null
+  const isAdmin = userRole === 'admin' || userRole === 'koordinator'
 
   useEffect(() => {
     setMobileMenuOpen(false)
@@ -93,7 +116,9 @@ function AppContent({ auth, isAuthenticated, onLogin, onLogout }) {
             )}
           </div>
           <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-            {menuItems.map((item) => {
+            {menuItems
+              .filter((item) => !item.adminOnly || isAdmin)
+              .map((item) => {
               const Icon = item.icon
               return (
                 <NavLink
@@ -203,7 +228,7 @@ function AppContent({ auth, isAuthenticated, onLogin, onLogout }) {
                 path="/inventaris"
                 element={
                   <ProtectedRoute isAuthenticated={isAuthenticated}>
-                    <InventarisPage />
+                    <InventarisPage isAdmin={isAdmin} />
                   </ProtectedRoute>
                 }
               />
@@ -211,16 +236,30 @@ function AppContent({ auth, isAuthenticated, onLogin, onLogout }) {
                 path="/log-riwayat"
                 element={
                   <ProtectedRoute isAuthenticated={isAuthenticated}>
-                    <LogRiwayatPage />
+                    <LogRiwayatPage isAdmin={isAdmin} />
                   </ProtectedRoute>
                 }
               />
               <Route
                 path="/master-data"
                 element={
-                  <ProtectedRoute isAuthenticated={isAuthenticated}>
+                  <AdminRoute
+                    isAuthenticated={isAuthenticated}
+                    isAdmin={isAdmin}
+                  >
                     <MasterDataPage />
-                  </ProtectedRoute>
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/users"
+                element={
+                  <AdminRoute
+                    isAuthenticated={isAuthenticated}
+                    isAdmin={isAdmin}
+                  >
+                    <UsersPage />
+                  </AdminRoute>
                 }
               />
               <Route

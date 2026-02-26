@@ -51,6 +51,22 @@ function auth(req, res, next) {
   }
 }
 
+function isAdminUser(user) {
+  if (!user || !user.role) return false
+  const role = String(user.role).toLowerCase()
+  // Treat "admin" and "koordinator" as admin-level roles
+  return role === 'admin' || role === 'koordinator'
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.user || !isAdminUser(req.user)) {
+    return res
+      .status(403)
+      .json({ message: 'Akses ditolak. Hanya Admin/Koordinator yang diizinkan.' })
+  }
+  return next()
+}
+
 // Login
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body
@@ -96,6 +112,98 @@ app.post('/api/login', async (req, res) => {
   }
 })
 
+// User management (Admin/Koordinator only)
+app.get('/api/users', auth, requireAdmin, async (req, res) => {
+  try {
+    const rows = await query(
+      'SELECT id, username, full_name AS fullName, role FROM users ORDER BY username ASC',
+    )
+    res.json(rows)
+  } catch (err) {
+    console.error('GET /api/users error', err)
+    res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.post('/api/users', auth, requireAdmin, async (req, res) => {
+  const { username, password, fullName, role } = req.body
+
+  if (!username || !password || !fullName) {
+    return res
+      .status(400)
+      .json({ message: 'Username, password, dan nama lengkap wajib diisi' })
+  }
+
+  const normalizedRole =
+    typeof role === 'string' && role.trim()
+      ? role.trim().toLowerCase()
+      : 'inspektor'
+
+  const allowedRoles = ['admin', 'koordinator', 'inspektor']
+  if (!allowedRoles.includes(normalizedRole)) {
+    return res.status(400).json({ message: 'Role tidak valid' })
+  }
+
+  try {
+    const [result] = await pool.query(
+      'INSERT INTO users (username, password, full_name, role) VALUES (?, ?, ?, ?)',
+      [username.trim(), password, fullName.trim(), normalizedRole],
+    )
+
+    const created = await query(
+      'SELECT id, username, full_name AS fullName, role FROM users WHERE id = ?',
+      [result.insertId],
+    )
+
+    return res.status(201).json(created[0])
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({ message: 'Username sudah digunakan' })
+    }
+    console.error('POST /api/users error', err)
+    return res.status(500).json({ message: 'Server error' })
+  }
+})
+
+app.delete('/api/users/:id', auth, requireAdmin, async (req, res) => {
+  const id = Number(req.params.id)
+  if (!id) {
+    return res.status(400).json({ message: 'ID user tidak valid' })
+  }
+
+  try {
+    const rows = await query(
+      'SELECT id, role FROM users WHERE id = ? LIMIT 1',
+      [id],
+    )
+
+    if (!rows.length) {
+      return res.status(404).json({ message: 'User tidak ditemukan' })
+    }
+
+    const user = rows[0]
+    const role = String(user.role).toLowerCase()
+
+    // Tidak boleh menghapus admin/koordinator atau akun sendiri
+    if (role === 'admin' || role === 'koordinator') {
+      return res
+        .status(400)
+        .json({ message: 'User dengan role Admin/Koordinator tidak dapat dihapus' })
+    }
+    if (user.id === req.user.userId) {
+      return res
+        .status(400)
+        .json({ message: 'Anda tidak dapat menghapus akun yang sedang digunakan' })
+    }
+
+    await pool.query('DELETE FROM users WHERE id = ?', [id])
+    return res.json({ message: 'User berhasil dihapus' })
+  } catch (err) {
+    console.error('DELETE /api/users/:id error', err)
+    return res.status(500).json({ message: 'Server error' })
+  }
+})
+
 // Dashboard summary
 app.get('/api/dashboard', auth, async (req, res) => {
   try {
@@ -129,7 +237,7 @@ app.get('/api/departments', auth, async (req, res) => {
   }
 })
 
-app.post('/api/departments', auth, async (req, res) => {
+app.post('/api/departments', auth, requireAdmin, async (req, res) => {
   const { name, code } = req.body
   if (!name || !code) {
     return res.status(400).json({ message: 'Nama dan kode departemen wajib' })
@@ -151,7 +259,7 @@ app.post('/api/departments', auth, async (req, res) => {
   }
 })
 
-app.delete('/api/departments/:id', auth, async (req, res) => {
+app.delete('/api/departments/:id', auth, requireAdmin, async (req, res) => {
   const id = Number(req.params.id)
   if (!id) {
     return res.status(400).json({ message: 'ID departemen tidak valid' })
@@ -220,7 +328,7 @@ app.get('/api/apd-tags', auth, async (req, res) => {
 })
 
 // Batch registration of new APD
-app.post('/api/batch-registration', auth, async (req, res) => {
+app.post('/api/batch-registration', auth, requireAdmin, async (req, res) => {
   const { departmentId, namaApd, jumlahUnit, lokasi } = req.body
   const deptId = Number(departmentId)
   const qty = Number(jumlahUnit)
@@ -373,7 +481,7 @@ app.patch('/api/inventaris/:id/verifikasi-k3l', auth, async (req, res) => {
   }
 })
 
-app.delete('/api/inventaris/:id', auth, async (req, res) => {
+app.delete('/api/inventaris/:id', auth, requireAdmin, async (req, res) => {
   const id = Number(req.params.id)
   if (!id) {
     return res.status(400).json({ message: 'ID asset tidak valid' })
@@ -421,6 +529,7 @@ app.get('/api/logs', auth, async (req, res) => {
       `
       SELECT
         l.id,
+        l.department_id AS department_id,
         l.inspected_at,
         l.inspector_name,
         d.name AS department_name,
@@ -469,6 +578,73 @@ app.patch('/api/logs/:id/verifikasi-k3l', auth, async (req, res) => {
     return res.json({ message: 'Verifikasi K3L berhasil disimpan' })
   } catch (err) {
     console.error('PATCH /api/logs/:id/verifikasi-k3l error', err)
+    return res.status(500).json({ message: 'Server error' })
+  }
+})
+
+// Hapus satu log inspeksi (dan perbarui kondisi asset terkait)
+app.delete('/api/logs/:id', auth, requireAdmin, async (req, res) => {
+  const id = Number(req.params.id)
+  if (!id) {
+    return res.status(400).json({ message: 'ID log tidak valid' })
+  }
+
+  try {
+    const logs = await query(
+      `
+        SELECT id, tag_id
+        FROM inspection_logs
+        WHERE id = ?
+        LIMIT 1
+      `,
+      [id],
+    )
+
+    if (!logs.length) {
+      return res.status(404).json({ message: 'Log inspeksi tidak ditemukan' })
+    }
+
+    const { tag_id: tagId } = logs[0]
+
+    await pool.query('DELETE FROM inspection_logs WHERE id = ?', [id])
+
+    // Hitung ulang kondisi & inspeksi terakhir untuk asset terkait
+    const [latestRows] = await pool.query(
+      `
+        SELECT inspected_at, kondisi, lokasi
+        FROM inspection_logs
+        WHERE tag_id = ?
+        ORDER BY inspected_at DESC
+        LIMIT 1
+      `,
+      [tagId],
+    )
+
+    if (latestRows.length) {
+      const latest = latestRows[0]
+      await pool.query(
+        `
+          UPDATE apd_assets
+          SET kondisi = ?, last_inspection_at = ?, lokasi = ?
+          WHERE tag_id = ?
+        `,
+        [latest.kondisi, latest.inspected_at, latest.lokasi, tagId],
+      )
+    } else {
+      // Tidak ada lagi log untuk asset ini
+      await pool.query(
+        `
+          UPDATE apd_assets
+          SET last_inspection_at = NULL
+          WHERE tag_id = ?
+        `,
+        [tagId],
+      )
+    }
+
+    return res.json({ message: 'Log inspeksi berhasil dihapus' })
+  } catch (err) {
+    console.error('DELETE /api/logs/:id error', err)
     return res.status(500).json({ message: 'Server error' })
   }
 })

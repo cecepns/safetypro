@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Filter, RefreshCw, FileDown, FileText, Printer, FileCheck } from 'lucide-react'
+import {
+  Filter,
+  RefreshCw,
+  FileDown,
+  FileText,
+  Printer,
+  FileCheck,
+  Trash2,
+} from 'lucide-react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import * as XLSX from 'xlsx'
@@ -30,13 +38,14 @@ function formatDateTime(value) {
   })
 }
 
-function LogRiwayatPage() {
+function LogRiwayatPage({ isAdmin = false }) {
   const [departments, setDepartments] = useState([])
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [verifikasiModal, setVerifikasiModal] = useState(null)
   const [verifikasiSaving, setVerifikasiSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState(null)
   const [filters, setFilters] = useState({
     departmentId: '',
     search: '',
@@ -88,6 +97,13 @@ function LogRiwayatPage() {
   const filteredLogs = useMemo(() => {
     let list = logs
 
+    if (filters.departmentId) {
+      const deptId = Number(filters.departmentId)
+      list = list.filter(
+        (log) => Number(log.department_id) === deptId,
+      )
+    }
+
     const verifikasiFilter = filters.verifikasiK3L
     if (verifikasiFilter === 'sudah') {
       list = list.filter(
@@ -114,7 +130,7 @@ function LogRiwayatPage() {
         log.verifikasi_k3l?.toLowerCase().includes(term)
       )
     })
-  }, [filters.search, filters.verifikasiK3L, logs])
+  }, [filters.search, filters.verifikasiK3L, filters.departmentId, logs])
 
   function openVerifikasiModal(log) {
     setVerifikasiModal({
@@ -162,6 +178,28 @@ function LogRiwayatPage() {
     }
   }
 
+  async function handleDeleteLog(id) {
+    if (!isAdmin) return
+    if (!window.confirm('Hapus riwayat inspeksi ini? Tindakan ini tidak dapat dibatalkan.')) {
+      return
+    }
+
+    setDeletingId(id)
+    setError('')
+    try {
+      await api.delete(`/logs/${id}`)
+      setLogs((prev) => prev.filter((log) => log.id !== id))
+    } catch (err) {
+      console.error('Failed to delete log', err)
+      setError(
+        err.response?.data?.message ||
+          'Gagal menghapus riwayat inspeksi. Silakan coba lagi.',
+      )
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   function exportExcel() {
     const data = filteredLogs.map((row) => ({
       'WAKTU & INSPEKTOR': `${formatDateTime(row.inspected_at)} - ${
@@ -172,8 +210,9 @@ function LogRiwayatPage() {
       'ID TAG': row.tag_id,
       LOKASI: row.lokasi,
       KONDISI: KONDISI_LABEL[row.kondisi] || row.kondisi,
-      'VERIFIKASI K3L': row.verifikasi_k3l || '',
       REMARKS: row.remarks || '',
+      'TTD SAFETY REPRESENTATIVE': '',
+      'KETUA K3L': '',
     }))
     const ws = XLSX.utils.json_to_sheet(data)
     const wb = XLSX.utils.book_new()
@@ -192,7 +231,6 @@ function LogRiwayatPage() {
       row.tag_id,
       row.lokasi,
       KONDISI_LABEL[row.kondisi] || row.kondisi,
-      row.verifikasi_k3l || '',
       row.remarks || '',
     ])
 
@@ -206,7 +244,6 @@ function LogRiwayatPage() {
           'ID TAG',
           'LOKASI',
           'KONDISI',
-          'VERIFIKASI K3L',
           'REMARKS',
         ],
       ],
@@ -214,6 +251,12 @@ function LogRiwayatPage() {
       styles: { fontSize: 8 },
       headStyles: { fillColor: [37, 99, 235] },
     })
+
+    const finalY = (doc.lastAutoTable?.finalY || 60) + 40
+    doc.setFontSize(10)
+
+    doc.text('Ttd Safety Representative', 80, finalY)
+    doc.text('Ketua K3L', 400, finalY)
 
     doc.save('safetypro-log-riwayat.pdf')
   }
@@ -234,7 +277,6 @@ function LogRiwayatPage() {
         <td>${row.tag_id}</td>
         <td>${row.lokasi}</td>
         <td>${KONDISI_LABEL[row.kondisi] || row.kondisi}</td>
-        <td>${row.verifikasi_k3l || ''}</td>
         <td>${row.remarks || ''}</td>
       </tr>`,
       )
@@ -262,7 +304,6 @@ function LogRiwayatPage() {
                 <th>ID TAG</th>
                 <th>LOKASI</th>
                 <th>KONDISI</th>
-                <th>VERIFIKASI K3L</th>
                 <th>REMARKS</th>
               </tr>
             </thead>
@@ -270,6 +311,16 @@ function LogRiwayatPage() {
               ${rowsHtml}
             </tbody>
           </table>
+          <div style="margin-top: 40px; display: flex; justify-content: space-between;">
+            <div style="text-align: center;">
+              <div>Safety Representative</div>
+              <div style="margin-top: 60px;">(............................)</div>
+            </div>
+            <div style="text-align: center;">
+              <div>Ketua K3L</div>
+              <div style="margin-top: 60px;">(............................)</div>
+            </div>
+          </div>
         </body>
       </html>
     `)
@@ -398,7 +449,7 @@ function LogRiwayatPage() {
         )}
 
         <div className="max-h-[520px] overflow-auto">
-          <table className="min-w-full text-xs">
+          <table className="min-w-full text-xs min-w-[900px]">
             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
                 <th className="text-left font-semibold text-slate-600 px-4 py-2">
@@ -425,13 +476,18 @@ function LogRiwayatPage() {
                 <th className="text-left font-semibold text-slate-600 px-4 py-2">
                   Catatan / Verifikasi
                 </th>
+                {isAdmin && (
+                  <th className="text-right font-semibold text-slate-600 px-4 py-2">
+                    Aksi
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
               {filteredLogs.length === 0 && !loading ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={isAdmin ? 9 : 8}
                     className="px-4 py-6 text-center text-xs text-slate-500"
                   >
                     Belum ada log inspeksi yang sesuai filter.
@@ -501,6 +557,19 @@ function LogRiwayatPage() {
                         {log.verifikasi_k3l ? 'Edit' : 'Isi'} Verifikasi K3L
                       </button>
                     </td>
+                    {isAdmin && (
+                      <td className="px-4 py-2 text-right align-top">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteLog(log.id)}
+                          disabled={deletingId === log.id}
+                          className="inline-flex items-center rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" />
+                          {deletingId === log.id ? 'Menghapus...' : 'Hapus'}
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}

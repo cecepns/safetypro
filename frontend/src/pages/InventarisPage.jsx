@@ -27,7 +27,7 @@ function formatDateTime(value) {
   })
 }
 
-function InventarisPage() {
+function InventarisPage({ isAdmin = false }) {
   const [departments, setDepartments] = useState([])
   const [apdNames, setApdNames] = useState([])
   const [items, setItems] = useState([])
@@ -111,19 +111,40 @@ function InventarisPage() {
   }
 
   const filteredItems = useMemo(() => {
+    let list = items
+
+    // Filter cepat berdasarkan teks
     const term = filters.search.trim().toLowerCase()
-    if (!term) return items
-    return items.filter((item) => {
-      return (
-        item.nama_apd?.toLowerCase().includes(term) ||
-        item.tag_id?.toLowerCase().includes(term) ||
-        item.department_name?.toLowerCase().includes(term) ||
-        item.department_code?.toLowerCase().includes(term) ||
-        item.lokasi?.toLowerCase().includes(term) ||
-        item.verifikasi_k3l?.toLowerCase().includes(term)
+    if (term) {
+      list = list.filter((item) => {
+        return (
+          item.nama_apd?.toLowerCase().includes(term) ||
+          item.tag_id?.toLowerCase().includes(term) ||
+          item.department_name?.toLowerCase().includes(term) ||
+          item.department_code?.toLowerCase().includes(term) ||
+          item.lokasi?.toLowerCase().includes(term) ||
+          item.verifikasi_k3l?.toLowerCase().includes(term)
+        )
+      })
+    }
+
+    // Filter tambahan berdasarkan dropdown Departemen & Jenis APD
+    if (filters.departmentId) {
+      const deptId = Number(filters.departmentId)
+      list = list.filter(
+        (item) => Number(item.department_id) === deptId,
       )
-    })
-  }, [filters.search, items])
+    }
+
+    if (filters.jenisApd) {
+      const jenis = filters.jenisApd.toLowerCase()
+      list = list.filter(
+        (item) => item.nama_apd?.toLowerCase() === jenis,
+      )
+    }
+
+    return list
+  }, [filters.search, filters.departmentId, filters.jenisApd, items])
 
   async function handleDeleteItem(id) {
     if (
@@ -303,7 +324,7 @@ function InventarisPage() {
         )}
 
         <div className="max-h-[520px] overflow-auto">
-          <table className="min-w-full text-xs">
+          <table className="min-w-full text-xs min-w-[800px]">
             <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
                 <th className="text-left font-semibold text-slate-600 px-4 py-2">
@@ -396,15 +417,17 @@ function InventarisPage() {
                       )}
                     </td>
                     <td className="px-4 py-2 align-top text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteItem(item.id)}
-                        disabled={deletingId === item.id}
-                        className="inline-flex items-center rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
-                      >
-                        <Trash2 className="h-3 w-3 mr-1" />
-                        {deletingId === item.id ? 'Menghapus...' : 'Hapus'}
-                      </button>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteItem(item.id)}
+                          disabled={deletingId === item.id}
+                          className="inline-flex items-center rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" />
+                          {deletingId === item.id ? 'Menghapus...' : 'Hapus'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
