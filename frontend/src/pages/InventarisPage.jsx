@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Filter, RefreshCw, Trash2, FileCheck } from 'lucide-react'
+import { Filter, RefreshCw, Trash2 } from 'lucide-react'
 import api from '../services/api'
 
 const KONDISI_BADGE = {
@@ -34,8 +34,6 @@ function InventarisPage({ isAdmin = false }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [deletingId, setDeletingId] = useState(null)
-  const [verifikasiModal, setVerifikasiModal] = useState(null)
-  const [verifikasiSaving, setVerifikasiSaving] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize] = useState(20)
   const [total, setTotal] = useState(0)
@@ -137,8 +135,7 @@ function InventarisPage({ isAdmin = false }) {
           item.tag_id?.toLowerCase().includes(term) ||
           item.department_name?.toLowerCase().includes(term) ||
           item.department_code?.toLowerCase().includes(term) ||
-          item.lokasi?.toLowerCase().includes(term) ||
-          item.verifikasi_k3l?.toLowerCase().includes(term)
+          item.lokasi?.toLowerCase().includes(term)
         )
       })
     }
@@ -174,53 +171,6 @@ function InventarisPage({ isAdmin = false }) {
       )
     } finally {
       setDeletingId(null)
-    }
-  }
-
-  function openVerifikasiModal(item) {
-    setVerifikasiModal({
-      id: item.id,
-      tag_id: item.tag_id,
-      nama_apd: item.nama_apd,
-      verifikasiK3L: item.verifikasi_k3l || '',
-    })
-  }
-
-  function closeVerifikasiModal() {
-    setVerifikasiModal(null)
-  }
-
-  function handleVerifikasiChange(e) {
-    setVerifikasiModal((prev) =>
-      prev ? { ...prev, verifikasiK3L: e.target.value } : null,
-    )
-  }
-
-  async function handleSaveVerifikasi(e) {
-    e.preventDefault()
-    if (!verifikasiModal) return
-    setVerifikasiSaving(true)
-    setError('')
-    try {
-      await api.patch(
-        `/inventaris/${verifikasiModal.id}/verifikasi-k3l`,
-        { verifikasiK3L: verifikasiModal.verifikasiK3L },
-      )
-      setItems((prev) =>
-        prev.map((it) =>
-          it.id === verifikasiModal.id
-            ? { ...it, verifikasi_k3l: verifikasiModal.verifikasiK3L }
-            : it,
-        ),
-      )
-      closeVerifikasiModal()
-    } catch (err) {
-      setError(
-        err.response?.data?.message ||
-          'Gagal menyimpan Verifikasi K3L. Pastikan sudah ada data inspeksi.',
-      )
-    } finally {
-      setVerifikasiSaving(false)
     }
   }
 
@@ -354,9 +304,6 @@ function InventarisPage({ isAdmin = false }) {
                 <th className="text-left font-semibold text-slate-600 px-4 py-2">
                   Inspeksi Terakhir
                 </th>
-                <th className="text-left font-semibold text-slate-600 px-4 py-2">
-                  Verifikasi K3L
-                </th>
                 <th className="text-right font-semibold text-slate-600 px-4 py-2">
                   Aksi
                 </th>
@@ -366,7 +313,7 @@ function InventarisPage({ isAdmin = false }) {
               {filteredItems.length === 0 && !loading ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={7}
                     className="px-4 py-6 text-center text-xs text-slate-500"
                   >
                     Belum ada data inventaris yang sesuai filter.
@@ -409,21 +356,6 @@ function InventarisPage({ isAdmin = false }) {
                     </td>
                     <td className="px-4 py-2 align-top text-slate-700">
                       {formatDateTime(item.last_inspection_at)}
-                    </td>
-                    <td className="px-4 py-2 align-top max-w-[180px]">
-                      <span className="line-clamp-2 text-[11px] text-slate-600 block">
-                        {item.verifikasi_k3l || '-'}
-                      </span>
-                      {item.last_inspection_at && (
-                        <button
-                          type="button"
-                          onClick={() => openVerifikasiModal(item)}
-                          className="inline-flex items-center gap-1 mt-0.5 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-50"
-                        >
-                          <FileCheck className="h-2.5 w-2.5" />
-                          {item.verifikasi_k3l ? 'Edit' : 'Isi'} Verifikasi K3L
-                        </button>
-                      )}
                     </td>
                     <td className="px-4 py-2 align-top text-right">
                       {isAdmin && (
@@ -468,49 +400,6 @@ function InventarisPage({ isAdmin = false }) {
           >
             Berikutnya
           </button>
-        </div>
-      )}
-
-      {verifikasiModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="verifikasi-modal-title"
-        >
-          <div className="bg-white rounded-xl shadow-lg border border-slate-200 w-full max-w-md p-4 space-y-3">
-            <h2
-              id="verifikasi-modal-title"
-              className="text-sm font-semibold text-slate-900"
-            >
-              Verifikasi K3L — {verifikasiModal.nama_apd} ({verifikasiModal.tag_id})
-            </h2>
-            <form onSubmit={handleSaveVerifikasi} className="space-y-3">
-              <textarea
-                value={verifikasiModal.verifikasiK3L}
-                onChange={handleVerifikasiChange}
-                rows={4}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                placeholder="Isi verifikasi K3L setelah data inspeksi diinput..."
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={closeVerifikasiModal}
-                  className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={verifikasiSaving}
-                  className="inline-flex items-center bg-red-500 gap-1.5 px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {verifikasiSaving ? 'Menyimpan...' : 'Simpan'}
-                </button>
-              </div>
-            </form>
-          </div>
         </div>
       )}
     </div>

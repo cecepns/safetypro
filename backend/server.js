@@ -356,12 +356,18 @@ app.post('/api/batch-registration', auth, requireAdmin, async (req, res) => {
     const firstLetter =
       namaApd && namaApd.trim() ? namaApd.trim().charAt(0).toUpperCase() : 'X'
 
-    const [countRows] = await conn.query(
-      'SELECT COUNT(*) AS cnt FROM apd_assets WHERE department_id = ? AND nama_apd = ?',
-      [deptId, namaApd],
+    const tagPrefix = `APD-${deptCode}-${firstLetter}-`
+
+    const [maxRows] = await conn.query(
+      `
+      SELECT
+        MAX(CAST(SUBSTRING_INDEX(tag_id, '-', -1) AS UNSIGNED)) AS maxNumber
+      FROM apd_assets
+      WHERE tag_id LIKE ?
+    `,
+      [`${tagPrefix}%`],
     )
-    const existingCount = countRows[0].cnt || 0
-    const startIndex = existingCount + 1
+    const startIndex = (maxRows[0].maxNumber || 0) + 1
 
     const values = []
     const createdTags = []
@@ -389,7 +395,13 @@ app.post('/api/batch-registration', auth, requireAdmin, async (req, res) => {
     await conn.rollback()
     conn.release()
     console.error('POST /api/batch-registration error', err)
-    res.status(500).json({ message: 'Server error' })
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({
+        message:
+          'Tag APD yang dihasilkan bertabrakan dengan data yang sudah ada. Silakan cek data inventaris atau ulangi dengan jumlah unit berbeda.',
+      })
+    }
+    return res.status(500).json({ message: 'Server error' })
   }
 })
 

@@ -5,7 +5,6 @@ import {
   FileDown,
   FileText,
   Printer,
-  FileCheck,
   Trash2,
 } from 'lucide-react'
 import jsPDF from 'jspdf'
@@ -43,8 +42,6 @@ function LogRiwayatPage({ isAdmin = false }) {
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [verifikasiModal, setVerifikasiModal] = useState(null)
-  const [verifikasiSaving, setVerifikasiSaving] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
   const [page, setPage] = useState(1)
   const [pageSize] = useState(20)
@@ -52,7 +49,6 @@ function LogRiwayatPage({ isAdmin = false }) {
   const [filters, setFilters] = useState({
     departmentId: '',
     search: '',
-    verifikasiK3L: '', // '' = semua, 'sudah' = sudah verifikasi, 'belum' = belum verifikasi
   })
 
   useEffect(() => {
@@ -113,20 +109,7 @@ function LogRiwayatPage({ isAdmin = false }) {
   }
 
   const filteredLogs = useMemo(() => {
-    let list = logs
-
-    const verifikasiFilter = filters.verifikasiK3L
-    if (verifikasiFilter === 'sudah') {
-      list = list.filter(
-        (log) => log.verifikasi_k3l != null && log.verifikasi_k3l.trim() !== '',
-      )
-    } else if (verifikasiFilter === 'belum') {
-      list = list.filter(
-        (log) =>
-          log.verifikasi_k3l == null || log.verifikasi_k3l.trim() === '',
-      )
-    }
-
+    const list = logs
     const term = filters.search.trim().toLowerCase()
     if (!term) return list
     return list.filter((log) => {
@@ -137,63 +120,16 @@ function LogRiwayatPage({ isAdmin = false }) {
         log.department_name?.toLowerCase().includes(term) ||
         log.department_code?.toLowerCase().includes(term) ||
         log.lokasi?.toLowerCase().includes(term) ||
-        log.remarks?.toLowerCase().includes(term) ||
-        log.verifikasi_k3l?.toLowerCase().includes(term)
+        log.remarks?.toLowerCase().includes(term)
       )
     })
-  }, [filters.search, filters.verifikasiK3L, logs])
+  }, [filters.search, logs])
 
   const totalPages = total > 0 ? Math.ceil(total / pageSize) : 1
 
   function handleChangePage(newPage) {
     if (newPage < 1 || newPage > totalPages || newPage === page) return
     loadLogs(newPage)
-  }
-
-  function openVerifikasiModal(log) {
-    setVerifikasiModal({
-      id: log.id,
-      item_name: log.item_name,
-      tag_id: log.tag_id,
-      verifikasiK3L: log.verifikasi_k3l || '',
-    })
-  }
-
-  function closeVerifikasiModal() {
-    setVerifikasiModal(null)
-  }
-
-  function handleVerifikasiChange(e) {
-    setVerifikasiModal((prev) =>
-      prev ? { ...prev, verifikasiK3L: e.target.value } : null,
-    )
-  }
-
-  async function handleSaveVerifikasi(e) {
-    e.preventDefault()
-    if (!verifikasiModal) return
-    setVerifikasiSaving(true)
-    setError('')
-    try {
-      await api.patch(
-        `/logs/${verifikasiModal.id}/verifikasi-k3l`,
-        { verifikasiK3L: verifikasiModal.verifikasiK3L },
-      )
-      setLogs((prev) =>
-        prev.map((log) =>
-          log.id === verifikasiModal.id
-            ? { ...log, verifikasi_k3l: verifikasiModal.verifikasiK3L }
-            : log,
-        ),
-      )
-      closeVerifikasiModal()
-    } catch (err) {
-      setError(
-        err.response?.data?.message || 'Gagal menyimpan Verifikasi K3L.',
-      )
-    } finally {
-      setVerifikasiSaving(false)
-    }
   }
 
   async function handleDeleteLog(id) {
@@ -419,21 +355,6 @@ function LogRiwayatPage({ isAdmin = false }) {
               ))}
             </select>
           </div>
-          <div className="space-y-1">
-            <label className="block text-xs font-medium text-slate-700">
-              Verifikasi K3L
-            </label>
-            <select
-              name="verifikasiK3L"
-              value={filters.verifikasiK3L}
-              onChange={handleFilterChange}
-              className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-            >
-              <option value="">Semua</option>
-              <option value="sudah">Sudah verifikasi K3L</option>
-              <option value="belum">Belum verifikasi K3L</option>
-            </select>
-          </div>
           <div className="space-y-1 md:col-span-2">
             <label className="block text-xs font-medium text-slate-700">
               Pencarian cepat
@@ -443,7 +364,7 @@ function LogRiwayatPage({ isAdmin = false }) {
               name="search"
               value={filters.search}
               onChange={handleFilterChange}
-              placeholder="Cari inspektor, item APD, tag ID, departemen, lokasi, atau catatan..."
+              placeholder="Cari inspektor, item APD, tag ID, departemen, lokasi, catatan..."
               className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             />
           </div>
@@ -493,7 +414,7 @@ function LogRiwayatPage({ isAdmin = false }) {
                   Lokasi
                 </th>
                 <th className="text-left font-semibold text-slate-600 px-4 py-2">
-                  Catatan / Verifikasi
+                  Catatan
                 </th>
                 {isAdmin && (
                   <th className="text-right font-semibold text-slate-600 px-4 py-2">
@@ -551,30 +472,10 @@ function LogRiwayatPage({ isAdmin = false }) {
                     <td className="px-4 py-2 text-slate-800">
                       {log.lokasi}
                     </td>
-                    <td className="px-4 py-2 text-slate-700">
-                      {log.remarks && (
-                        <div className="mb-1 text-[11px] text-slate-700">
-                          <span className="font-semibold">Catatan: </span>
-                          {log.remarks}
-                        </div>
-                      )}
-                      {log.verifikasi_k3l && (
-                        <div className="text-[11px] text-slate-700">
-                          <span className="font-semibold">Verifikasi K3L: </span>
-                          {log.verifikasi_k3l}
-                        </div>
-                      )}
-                      {!log.remarks && !log.verifikasi_k3l && (
-                        <span className="text-[11px] text-slate-400">-</span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => openVerifikasiModal(log)}
-                        className="inline-flex items-center gap-1 mt-1 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-50"
-                      >
-                        <FileCheck className="h-2.5 w-2.5" />
-                        {log.verifikasi_k3l ? 'Edit' : 'Isi'} Verifikasi K3L
-                      </button>
+                    <td className="px-4 py-2 text-slate-700 max-w-[200px]">
+                      <span className="text-[11px] text-slate-700">
+                        {log.remarks || '-'}
+                      </span>
                     </td>
                     {isAdmin && (
                       <td className="px-4 py-2 text-right align-top">
@@ -619,49 +520,6 @@ function LogRiwayatPage({ isAdmin = false }) {
           >
             Berikutnya
           </button>
-        </div>
-      )}
-
-      {verifikasiModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="verifikasi-modal-title"
-        >
-          <div className="bg-white rounded-xl shadow-lg border border-slate-200 w-full max-w-md p-4 space-y-3">
-            <h2
-              id="verifikasi-modal-title"
-              className="text-sm font-semibold text-slate-900"
-            >
-              Verifikasi K3L — {verifikasiModal.item_name} ({verifikasiModal.tag_id})
-            </h2>
-            <form onSubmit={handleSaveVerifikasi} className="space-y-3">
-              <textarea
-                value={verifikasiModal.verifikasiK3L}
-                onChange={handleVerifikasiChange}
-                rows={4}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                placeholder="Isi verifikasi K3L..."
-              />
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={closeVerifikasiModal}
-                  className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Batal
-                </button>
-                <button
-                  type="submit"
-                  disabled={verifikasiSaving}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {verifikasiSaving ? 'Menyimpan...' : 'Simpan'}
-                </button>
-              </div>
-            </form>
-          </div>
         </div>
       )}
     </div>
